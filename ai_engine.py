@@ -8,26 +8,19 @@ from flask import Flask
 
 app = Flask(__name__)
 
-# --- 1. डेटाबेस सेटअप (पहली बार टेबल बनाने के लिए) ---
+# --- 1. डेटाबेस सेटअप ---
 def setup_database():
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect('database.db', check_same_thread=False)
     cursor = conn.cursor()
-    
-    # Results टेबल
     cursor.execute('''CREATE TABLE IF NOT EXISTS results 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, period TEXT, number INTEGER, color TEXT, size TEXT)''')
-    
-    # AI Status टेबल
     cursor.execute('''CREATE TABLE IF NOT EXISTS ai_status 
                       (id INTEGER PRIMARY KEY, consecutive_losses INTEGER, cooldown_until TEXT, last_prediction TEXT, last_prediction_period TEXT)''')
-    
-    # डिफॉल्ट वैल्यू डालना
     cursor.execute("INSERT OR IGNORE INTO ai_status (id, consecutive_losses, last_prediction) VALUES (1, 0, 'Skip')")
-    
     conn.commit()
     conn.close()
 
-# --- 2. आपके पुराने रूल्स ---
+# --- 2. रूल्स ---
 def get_size(number):
     return "Small" if 0 <= number <= 4 else "Big"
 
@@ -39,23 +32,29 @@ def get_color(number):
 
 def fetch_live_result():
     try:
+        # यह लाइन हर बार 24/7 नया 'टोकन/टाइमस्टैम्प' खुद जनरेट करेगी!
         current_ts = int(time.time() * 1000)
-        url = f"https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={current_ts}"
+        url = f"https://api.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={current_ts}"
+        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*"
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://ar-lottery01.com/"
         }
-        response = requests.get(url, headers=headers)
-        data = response.json()
         
-        if 'data' in data: items = data['data']
-        elif 'list' in data: items = data['list']
-        else: items = data
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
             
-        latest_item = items[0]
-        latest_period = str(latest_item.get('issueNumber', latest_item.get('period')))
-        latest_number = int(latest_item.get('number', latest_item.get('prizeNumber')))
-        return latest_period, latest_number, get_color(latest_number), get_size(latest_number)
+            if 'data' in data: items = data['data']
+            elif 'list' in data: items = data['list']
+            else: items = data
+                
+            latest_item = items[0]
+            latest_period = str(latest_item.get('issueNumber', latest_item.get('period')))
+            latest_number = int(latest_item.get('number', latest_item.get('prizeNumber')))
+            return latest_period, latest_number, get_color(latest_number), get_size(latest_number)
+        return None, None, None, None
     except Exception as e:
         print("API एरर:", e)
         return None, None, None, None
@@ -87,11 +86,11 @@ def analyze_pattern(conn, current_sequence):
     elif small_chance >= 90: return "Small", small_chance
     else: return "Skip", max(big_chance, small_chance)
 
-# --- 3. मेन AI लूप (बैकग्राउंड में चलेगा) ---
+# --- 3. मेन AI लूप ---
 def run_ai():
     while True:
         try:
-            conn = sqlite3.connect('database.db')
+            conn = sqlite3.connect('database.db', check_same_thread=False)
             cursor = conn.cursor()
             
             cursor.execute("SELECT consecutive_losses, cooldown_until, last_prediction, last_prediction_period FROM ai_status WHERE id = 1")
@@ -102,6 +101,7 @@ def run_ai():
                 cooldown_time = datetime.strptime(cooldown, "%Y-%m-%d %H:%M:%S")
                 if datetime.now() < cooldown_time:
                     time.sleep(30)
+                    conn.close()
                     continue
                 else:
                     cursor.execute("UPDATE ai_status SET cooldown_until = NULL, consecutive_losses = 0 WHERE id = 1")
@@ -117,7 +117,7 @@ def run_ai():
                     
                     cursor.execute("INSERT INTO results (period, number, color, size) VALUES (?, ?, ?, ?)", (period, number, color, size))
                     
-                    if last_pred != "Skip" and pred_period:
+                    if last_pred != "Skip" and pred_period == period:
                         if size != last_pred:
                             losses += 1
                             if losses >= 3:
@@ -144,19 +144,17 @@ def run_ai():
             
         time.sleep(5)
 
-# --- 4. Render के लिए वेब सर्वर (ताकि ऐप क्रैश न हो) ---
+# --- 4. Render के लिए वेब सर्वर ---
 @app.route('/')
 def home():
     return "WinGo AI Prediction Bot is running 24/7!"
 
 if __name__ == "__main__":
-    setup_database() # पहले डेटाबेस तैयार करें
+    setup_database()
     
-    # AI बॉट को बैकग्राउंड थ्रेड में स्टार्ट करें
     bot_thread = threading.Thread(target=run_ai)
     bot_thread.daemon = True
     bot_thread.start()
     
-    # Flask सर्वर स्टार्ट करें
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
