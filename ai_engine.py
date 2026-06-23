@@ -4,7 +4,8 @@ import requests
 import threading
 import os
 from datetime import datetime, timedelta
-from flask import Flask
+# यहाँ render_template और jsonify को जोड़ दिया गया है
+from flask import Flask, render_template, jsonify 
 
 app = Flask(__name__)
 
@@ -32,7 +33,6 @@ def get_color(number):
 
 def fetch_live_result():
     try:
-        # यह लाइन हर बार 24/7 नया 'टोकन/टाइमस्टैम्प' खुद जनरेट करेगी!
         current_ts = int(time.time() * 1000)
         url = f"https://api.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={current_ts}"
         
@@ -144,10 +144,38 @@ def run_ai():
             
         time.sleep(5)
 
-# --- 4. Render के लिए वेब सर्वर ---
+# --- 4. Render के लिए वेब सर्वर (API & Frontend) ---
+
+def get_db_connection():
+    conn = sqlite3.connect('database.db', check_same_thread=False)
+    conn.row_factory = sqlite3.Row # इससे JSON में डेटा भेजना आसान होता है
+    return conn
+
 @app.route('/')
 def home():
-    return "WinGo AI Prediction Bot is running 24/7!"
+    # यह आपकी templates/index.html फाइल को कॉल करेगा
+    return render_template('index.html')
+
+@app.route('/api/live_data')
+def live_data():
+    # यह आपके index.html को हर 5 सेकंड में लाइव डेटा भेजेगा
+    try:
+        conn = get_db_connection()
+        status = conn.execute('SELECT * FROM ai_status WHERE id = 1').fetchone()
+        history = conn.execute('SELECT * FROM results ORDER BY period DESC LIMIT 10').fetchall()
+        conn.close()
+        
+        if status is None:
+            return jsonify({'cooldown': None, 'next_period': 'Wait...', 'prediction': 'Analyzing...', 'history': []})
+            
+        return jsonify({
+            'cooldown': status['cooldown_until'],
+            'next_period': status['last_prediction_period'],
+            'prediction': status['last_prediction'],
+            'history': [dict(row) for row in history]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 if __name__ == "__main__":
     setup_database()
