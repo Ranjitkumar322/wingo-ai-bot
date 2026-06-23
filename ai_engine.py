@@ -5,6 +5,7 @@ import threading
 import os
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify 
+import cloudscraper # <-- नया एंटी-ब्लॉक हथियार
 
 app = Flask(__name__)
 
@@ -30,28 +31,22 @@ def get_color(number):
     elif number == 0: return "Red/Blue"
     elif number == 5: return "Green/Blue"
 
+# --- अपडेटेड फंक्शन: Cloudflare बायपास के साथ ---
 def fetch_live_result():
     try:
         current_ts = int(time.time() * 1000)
         url = f"https://api.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={current_ts}"
         
-        # एकदम असली इंसान और क्रोम ब्राउज़र वाले भारी Headers
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
-            "Referer": "https://ar-lottery01.com/",
-            "Origin": "https://ar-lottery01.com",
-            "Connection": "keep-alive",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-site",
-            "Pragma": "no-cache",
-            "Cache-Control": "no-cache"
-        }
+        print(f"बॉट Cloudscraper की मदद से घुसने की कोशिश कर रहा है... (Time: {current_ts})", flush=True)
         
-        print(f"बॉट सर्वर से पूछ रहा है... (Time: {current_ts})", flush=True)
-        response = requests.get(url, headers=headers, timeout=10)
+        # यह टूल एकदम असली क्रोम ब्राउज़र की तरह बर्ताव करता है
+        scraper = cloudscraper.create_scraper(browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        })
+        
+        response = scraper.get(url, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
@@ -64,12 +59,11 @@ def fetch_live_result():
             latest_number = int(latest_item.get('number', latest_item.get('prizeNumber')))
             return latest_period, latest_number, get_color(latest_number), get_size(latest_number)
         else:
-            print(f"⚠️ गेम सर्वर ने ब्लॉक कर दिया! Status Code: {response.status_code}", flush=True)
-            print(f"सर्वर का जवाब: {response.text[:200]}", flush=True)
+            print(f"⚠️ अभी भी ब्लॉक! Status Code: {response.status_code}", flush=True)
             return None, None, None, None
             
     except Exception as e:
-        print(f"API भयंकर एरर: {e}", flush=True)
+        print(f"API एरर: {e}", flush=True)
         return None, None, None, None
 
 def analyze_pattern(conn, current_sequence):
