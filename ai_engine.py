@@ -41,10 +41,12 @@ def fetch_live_result():
             "Referer": "https://ar-lottery01.com/"
         }
         
+        # Naya Log: Pata chalega ki bot request bhej raha hai ya nahi
+        print(f"बॉट सर्वर से पूछ रहा है... (Time: {current_ts})", flush=True)
         response = requests.get(url, headers=headers, timeout=10)
+        
         if response.status_code == 200:
             data = response.json()
-            
             if 'data' in data: items = data['data']
             elif 'list' in data: items = data['list']
             else: items = data
@@ -53,9 +55,14 @@ def fetch_live_result():
             latest_period = str(latest_item.get('issueNumber', latest_item.get('period')))
             latest_number = int(latest_item.get('number', latest_item.get('prizeNumber')))
             return latest_period, latest_number, get_color(latest_number), get_size(latest_number)
-        return None, None, None, None
+        else:
+            # Agar Cloudflare ya server ne roka, toh yeh line Render logs me dikhegi
+            print(f"⚠️ गेम सर्वर ने ब्लॉक कर दिया! Status Code: {response.status_code}", flush=True)
+            print(f"सर्वर का जवाब: {response.text[:200]}", flush=True)
+            return None, None, None, None
+            
     except Exception as e:
-        print("API एरर:", e)
+        print(f"API भयंकर एरर: {e}", flush=True)
         return None, None, None, None
 
 def analyze_pattern(conn, current_sequence):
@@ -111,14 +118,13 @@ def run_ai():
             if period:
                 next_period = str(int(period) + 1)
                 
-                # नया जुगाड़: अगर पीरियड आईडी खाली है (पहली बार चालू हुआ है), तो तुरंत भर दो!
                 if pred_period is None or pred_period == "":
                     cursor.execute("UPDATE ai_status SET last_prediction_period = ? WHERE id = 1", (next_period,))
                     conn.commit()
 
                 cursor.execute("SELECT id FROM results WHERE period = ?", (period,))
                 if not cursor.fetchone():
-                    print(f"नया रिजल्ट मिला: {period}")
+                    print(f"नया रिजल्ट मिला: {period}", flush=True)
                     time.sleep(10)
                     
                     cursor.execute("INSERT INTO results (period, number, color, size) VALUES (?, ?, ?, ?)", (period, number, color, size))
@@ -141,11 +147,11 @@ def run_ai():
                     
                     cursor.execute("UPDATE ai_status SET last_prediction = ?, last_prediction_period = ? WHERE id = 1", (prediction, next_period))
                     conn.commit()
-                    print(f"Next Period: {next_period} | Prediction: {prediction} | Confidence: {confidence}%")
+                    print(f"Next Period: {next_period} | Prediction: {prediction} | Confidence: {confidence}%", flush=True)
 
             conn.close()
         except Exception as e:
-            print("लूप एरर:", e)
+            print("लूप एरर:", e, flush=True)
             
         time.sleep(5)
 
@@ -168,7 +174,6 @@ def live_data():
         history = conn.execute('SELECT * FROM results ORDER BY period DESC LIMIT 10').fetchall()
         conn.close()
         
-        # नया जुगाड़: लाइव टाइम भेजना
         current_time = datetime.now().strftime("%H:%M:%S")
         
         if status is None or status['last_prediction_period'] is None:
