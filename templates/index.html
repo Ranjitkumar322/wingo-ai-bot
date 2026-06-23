@@ -5,10 +5,11 @@
     <title>AI Prediction Tool</title>
     <style>
         body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; margin-top: 50px; }
-        .box { background: #1e1e1e; padding: 20px; margin: 20px auto; width: 300px; border-radius: 10px; }
+        .box { background: #1e1e1e; padding: 20px; margin: 20px auto; width: 300px; border-radius: 10px; box-shadow: 0px 0px 15px rgba(0, 255, 0, 0.2); }
         .pred { font-size: 24px; font-weight: bold; color: #00ff00; }
         .skip { color: #ffcc00; }
         .break { color: #ff3333; }
+        .time-text { font-size: 16px; color: #aaaaaa; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -16,6 +17,9 @@
     <h1>AI Analysis System</h1>
     
     <div class="box">
+        <p class="time-text">Live Time: <span id="live-time">--:--:--</span></p>
+        <hr style="border: 0.5px solid #333; margin-bottom: 15px;">
+        
         <h3>Next Period: <span id="period">Loading...</span></h3>
         <p>Prediction: <span id="prediction" class="pred">...</span></p>
         <p id="cooldown-msg" class="break"></p>
@@ -26,21 +30,29 @@
             fetch('/api/live_data')
             .then(response => response.json())
             .then(data => {
+                // टाइम अपडेट करेगा
+                document.getElementById('live-time').innerText = data.time || "--:--:--";
+                
+                // पीरियड आईडी अपडेट करेगा
                 document.getElementById('period').innerText = data.next_period || "Wait...";
                 
+                // प्रेडिक्शन अपडेट करेगा
                 let predEl = document.getElementById('prediction');
                 predEl.innerText = data.prediction || "Analyzing...";
                 
+                // कलर चेंज करेगा
                 if(data.prediction === "Skip") predEl.className = "skip";
                 else predEl.className = "pred";
 
+                // ब्रेक/कूलडाउन का मेसेज
                 if (data.cooldown) {
                     document.getElementById('cooldown-msg').innerText = "AI on Break until: " + data.cooldown;
                     predEl.innerText = "OBSERVING";
                 } else {
                     document.getElementById('cooldown-msg').innerText = "";
                 }
-            });
+            })
+            .catch(error => console.log("Error fetching data:", error));
         }
         
         setInterval(fetchData, 5000); // हर 5 सेकंड में अपडेट     
