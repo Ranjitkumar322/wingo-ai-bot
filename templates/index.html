@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Prediction Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; margin-top: 50px; }
+        .box { background: #1e1e1e; padding: 20px; margin: 20px auto; width: 300px; border-radius: 10px; }
+        .pred { font-size: 24px; font-weight: bold; color: #00ff00; }
+        .skip { color: #ffcc00; }
+        .break { color: #ff3333; }
+    </style>
+</head>
+<body>
+
+    <h1>AI Analysis System</h1>
+    
+    <div class="box">
+        <h3>Next Period: <span id="period">Loading...</span></h3>
+        <p>Prediction: <span id="prediction" class="pred">...</span></p>
+        <p id="cooldown-msg" class="break"></p>
+    </div>
+
+    <script>
+        function fetchData() {
+            fetch('/api/live_data')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('period').innerText = data.next_period || "Wait...";
+                
+                let predEl = document.getElementById('prediction');
+                predEl.innerText = data.prediction || "Analyzing...";
+                
+                if(data.prediction === "Skip") predEl.className = "skip";
+                else predEl.className = "pred";
+
+                if (data.cooldown) {
+                    document.getElementById('cooldown-msg').innerText = "AI on Break until: " + data.cooldown;
+                    predEl.innerText = "OBSERVING";
+                } else {
+                    document.getElementById('cooldown-msg').innerText = "";
+                }
+            });
+        }
+        
+        setInterval(fetchData, 5000); // हर 5 सेकंड में अपडेट
+        fetchData();
+    </script>
+
+</body>
+</html>
