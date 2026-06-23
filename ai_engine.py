@@ -4,7 +4,6 @@ import requests
 import threading
 import os
 from datetime import datetime, timedelta
-# यहाँ render_template और jsonify को जोड़ दिया गया है
 from flask import Flask, render_template, jsonify 
 
 app = Flask(__name__)
@@ -110,6 +109,13 @@ def run_ai():
             period, number, color, size = fetch_live_result()
             
             if period:
+                next_period = str(int(period) + 1)
+                
+                # नया जुगाड़: अगर पीरियड आईडी खाली है (पहली बार चालू हुआ है), तो तुरंत भर दो!
+                if pred_period is None or pred_period == "":
+                    cursor.execute("UPDATE ai_status SET last_prediction_period = ? WHERE id = 1", (next_period,))
+                    conn.commit()
+
                 cursor.execute("SELECT id FROM results WHERE period = ?", (period,))
                 if not cursor.fetchone():
                     print(f"नया रिजल्ट मिला: {period}")
@@ -132,7 +138,6 @@ def run_ai():
                     recent_sizes = [row[0] for row in cursor.fetchall()][::-1]
                     
                     prediction, confidence = analyze_pattern(conn, recent_sizes)
-                    next_period = str(int(period) + 1)
                     
                     cursor.execute("UPDATE ai_status SET last_prediction = ?, last_prediction_period = ? WHERE id = 1", (prediction, next_period))
                     conn.commit()
@@ -148,30 +153,32 @@ def run_ai():
 
 def get_db_connection():
     conn = sqlite3.connect('database.db', check_same_thread=False)
-    conn.row_factory = sqlite3.Row # इससे JSON में डेटा भेजना आसान होता है
+    conn.row_factory = sqlite3.Row 
     return conn
 
 @app.route('/')
 def home():
-    # यह आपकी templates/index.html फाइल को कॉल करेगा
     return render_template('index.html')
 
 @app.route('/api/live_data')
 def live_data():
-    # यह आपके index.html को हर 5 सेकंड में लाइव डेटा भेजेगा
     try:
         conn = get_db_connection()
         status = conn.execute('SELECT * FROM ai_status WHERE id = 1').fetchone()
         history = conn.execute('SELECT * FROM results ORDER BY period DESC LIMIT 10').fetchall()
         conn.close()
         
-        if status is None:
-            return jsonify({'cooldown': None, 'next_period': 'Wait...', 'prediction': 'Analyzing...', 'history': []})
+        # नया जुगाड़: लाइव टाइम भेजना
+        current_time = datetime.now().strftime("%H:%M:%S")
+        
+        if status is None or status['last_prediction_period'] is None:
+            return jsonify({'cooldown': None, 'next_period': 'Loading ID...', 'prediction': 'Analyzing...', 'time': current_time, 'history': []})
             
         return jsonify({
             'cooldown': status['cooldown_until'],
             'next_period': status['last_prediction_period'],
             'prediction': status['last_prediction'],
+            'time': current_time,
             'history': [dict(row) for row in history]
         })
     except Exception as e:
